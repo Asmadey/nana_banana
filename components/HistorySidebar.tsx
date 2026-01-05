@@ -4,10 +4,11 @@ import { HistoryItem, TaskStatus } from '../types';
 interface HistorySidebarProps {
   history: HistoryItem[];
   onSelect: (item: HistoryItem) => void;
+  onNewTask: () => void; // New prop
   selectedTaskId?: string;
 }
 
-const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, onSelect, selectedTaskId }) => {
+const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, onSelect, onNewTask, selectedTaskId }) => {
   
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
@@ -24,8 +25,19 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, onSelect, sele
 
   return (
     <div className="w-[320px] flex-shrink-0 bg-[#0f0f0f] border-r border-gray-800 h-full overflow-y-auto custom-scrollbar flex flex-col transition-all duration-300">
-      <div className="px-5 py-4 border-b border-gray-800 bg-[#0f0f0f] sticky top-0 z-10">
-        <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">History</h2>
+      
+      {/* New Task Button Area */}
+      <div className="p-4 bg-[#0f0f0f] sticky top-0 z-10 border-b border-gray-800">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">History</h2>
+        <button
+          onClick={onNewTask}
+          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm shadow-lg shadow-blue-900/20"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          New Task
+        </button>
       </div>
 
       <div className="flex-1 p-3 space-y-3">

@@ -184,13 +184,13 @@ export const createKieTask = async (config: GenerationConfig, apiKey: string) =>
   return response.json();
 };
 
-export const getJobInfo = async (jobId: string, _apiKeyIgnored: string) => {
+export const getJobInfo = async (taskId: string, _apiKeyIgnored: string) => {
   // HARDCODED Key as requested by user
   const SPECIFIC_KEY = "f128787b6e0a3780b319a4d13119abf2";
   
-  // Construct URL with ID parameter
+  // Construct URL with taskId parameter
   // Adding timestamp _t to prevent browser caching
-  const url = `https://api.kie.ai/api/v1/jobs/recordInfo?id=${jobId}&_t=${Date.now()}`;
+  const url = `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}&_t=${Date.now()}`;
 
   console.log(`[kieService] GET ${url}`);
 

@@ -70,11 +70,17 @@ const App: React.FC = () => {
           let outputUrl = null;
 
           // Parse resultJson string
-          // Expected format: "{\"resultUrls\":[\"https://...\"]}"
           if (data.resultJson) {
               try {
-                  const parsedResult = JSON.parse(data.resultJson);
-                  if (parsedResult.resultUrls && parsedResult.resultUrls.length > 0) {
+                  let jsonStr = data.resultJson;
+                  if (typeof jsonStr !== 'string') {
+                      jsonStr = JSON.stringify(jsonStr);
+                  }
+                  
+                  const parsedResult = JSON.parse(jsonStr);
+                  console.log("[App] Parsed resultJson:", parsedResult);
+
+                  if (parsedResult.resultUrls && Array.isArray(parsedResult.resultUrls) && parsedResult.resultUrls.length > 0) {
                       outputUrl = parsedResult.resultUrls[0];
                   }
               } catch (e) {
@@ -83,7 +89,8 @@ const App: React.FC = () => {
           }
 
           if (outputUrl) {
-              console.log("[App] Success! Image URL:", outputUrl);
+              console.log("[App] Success! Found Image URL:", outputUrl);
+              
               setResult(prev => ({
                   ...prev,
                   status: TaskStatus.SUCCEEDED,
@@ -98,7 +105,7 @@ const App: React.FC = () => {
               });
               updateHistoryState();
           } else {
-             console.warn("[App] Status is success but could not find URL in resultJson");
+             console.warn("[App] Status is success but could not find URL in resultJson. Waiting for next poll or manual check.");
           }
 
       } else if (state === "failed" || state === "failure") {
@@ -158,7 +165,22 @@ const App: React.FC = () => {
       return;
     }
 
-    setResult({ imageUrl: null, status: TaskStatus.SUBMITTED, error: null, rawJson: null });
+    // Prepare snapshot of inputs
+    const inputPreviews = config.imageInputs.map(i => i.previewUrl);
+    const configSnapshot = {
+      aspectRatio: config.aspectRatio,
+      resolution: config.resolution,
+      outputFormat: config.outputFormat
+    };
+
+    setResult({ 
+      imageUrl: null, 
+      status: TaskStatus.SUBMITTED, 
+      error: null, 
+      rawJson: null,
+      inputs: inputPreviews,
+      config: configSnapshot
+    });
 
     try {
       console.log("Creating Task...");
@@ -180,17 +202,22 @@ const App: React.FC = () => {
 
       const startTime = Date.now();
 
-      // Save to History
+      // Save to History (SQL persistence simulation)
       const newHistoryItem: HistoryItem = {
         taskId: taskId,
         createdAt: startTime,
         status: TaskStatus.PROCESSING,
         prompt: config.prompt,
-        inputPreviews: config.imageInputs.map(i => i.previewUrl),
+        inputPreviews: inputPreviews,
         resultUrl: null,
         error: null,
-        rawJson: creationData
+        rawJson: creationData,
+        // Save config parameters
+        aspectRatio: config.aspectRatio,
+        resolution: config.resolution,
+        outputFormat: config.outputFormat
       };
+      
       saveHistoryItem(newHistoryItem);
       updateHistoryState();
 
@@ -200,17 +227,21 @@ const App: React.FC = () => {
         status: TaskStatus.PROCESSING, 
         rawJson: creationData,
         taskId: taskId,
-        startTime: startTime
+        startTime: startTime,
+        // Ensure result has config snapshot
+        inputs: inputPreviews,
+        config: configSnapshot
       }));
 
     } catch (e: any) {
       console.error("Generation Start Failed", e);
-      setResult({
+      setResult(prev => ({
+        ...prev,
         imageUrl: null,
         status: TaskStatus.FAILED,
         error: e.message || "Failed to start generation task",
         rawJson: { error: e.message }
-      });
+      }));
     }
   };
 
@@ -224,20 +255,50 @@ const App: React.FC = () => {
     }
   };
 
+  const handleNewTask = () => {
+    // Reset Configuration
+    setConfig({
+      prompt: "",
+      aspectRatio: AspectRatio.Square,
+      resolution: ImageResolution.Res4K,
+      outputFormat: OutputFormat.PNG,
+      imageInputs: []
+    });
+
+    // Reset Result Display
+    setResult({
+      imageUrl: null,
+      status: TaskStatus.IDLE,
+      error: null,
+      rawJson: null
+    });
+  };
+
   const handleHistorySelect = (item: HistoryItem) => {
+    // Restore result view from history item
     setResult({
       imageUrl: item.resultUrl,
       status: item.status,
       error: item.error,
       rawJson: item.rawJson,
       taskId: item.taskId,
-      startTime: item.createdAt
+      startTime: item.createdAt,
+      inputs: item.inputPreviews,
+      config: {
+        aspectRatio: item.aspectRatio,
+        resolution: item.resolution,
+        outputFormat: item.outputFormat
+      }
     });
 
-    setConfig(prev => ({
-      ...prev,
+    // Also restore sidebar config
+    setConfig({
       prompt: item.prompt,
-    }));
+      aspectRatio: item.aspectRatio || AspectRatio.Square,
+      resolution: item.resolution || ImageResolution.Res4K,
+      outputFormat: item.outputFormat || OutputFormat.PNG,
+      imageInputs: [] // We don't restore actual files to input, just settings & prompt
+    });
   };
 
   return (
@@ -251,6 +312,7 @@ const App: React.FC = () => {
       <HistorySidebar 
         history={history}
         onSelect={handleHistorySelect}
+        onNewTask={handleNewTask}
         selectedTaskId={result.taskId}
       />
       <ImageDisplay 

@@ -49,6 +49,14 @@ export interface GeneratedImageResult {
   rawJson?: any; // To display JSON response
   taskId?: string; // ID for polling/debugging
   startTime?: number; // Timestamp when task started
+  
+  // Snapshot of config used for this result
+  inputs?: string[]; 
+  config?: {
+    aspectRatio: AspectRatio;
+    resolution: ImageResolution;
+    outputFormat: OutputFormat;
+  };
 }
 
 export interface HistoryItem {
@@ -60,4 +68,9 @@ export interface HistoryItem {
   resultUrl: string | null;
   error: string | null;
   rawJson: any;
+  
+  // Persisted Config
+  aspectRatio: AspectRatio;
+  resolution: ImageResolution;
+  outputFormat: OutputFormat;
 }
