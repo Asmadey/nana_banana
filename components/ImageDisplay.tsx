@@ -14,6 +14,9 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isTaskIdCopied, setIsTaskIdCopied] = useState(false);
   
+  // Lightbox State
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
   // Timer logic
   useEffect(() => {
     let interval: number;
@@ -30,6 +33,15 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
     }
     return () => clearInterval(interval);
   }, [status, startTime]);
+
+  // Handle ESC to close lightbox
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') setLightboxUrl(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -89,6 +101,31 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
   return (
     <div className="flex-1 bg-[#0a0a0a] flex flex-col h-full overflow-hidden text-gray-200 relative">
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
+      {/* LIGHTBOX MODAL */}
+      {lightboxUrl && (
+        <div 
+            className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+            onClick={() => setLightboxUrl(null)}
+        >
+            <div className="relative max-w-[95vw] max-h-[95vh]">
+                <img 
+                    src={lightboxUrl} 
+                    className="max-w-full max-h-[95vh] object-contain rounded-sm shadow-2xl" 
+                    alt="Lightbox View"
+                    onClick={(e) => e.stopPropagation()} // Prevent click on image closing modal
+                />
+                <button 
+                    onClick={() => setLightboxUrl(null)}
+                    className="absolute -top-4 -right-4 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 backdrop-blur-md transition-colors"
+                >
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-[#111]">
@@ -153,14 +190,21 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
              {/* Inputs Block */}
              {inputs && inputs.length > 0 && (
                  <div className="mb-6">
+                    <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2 block">Inputs</label>
                     <div className="grid grid-cols-2 gap-3">
                         {inputs.map((url, idx) => (
                             <div key={idx} className="relative group aspect-square bg-[#111] rounded-lg border border-gray-700 overflow-hidden">
                                 <img src={url} alt={`Input ${idx}`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <a href={url} target="_blank" rel="noreferrer" className="bg-white/10 hover:bg-white/20 p-1.5 rounded-full backdrop-blur-md text-white">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-                                    </a>
+                                    <button 
+                                        onClick={() => setLightboxUrl(url)}
+                                        className="bg-white/10 hover:bg-white/20 p-2 rounded-full backdrop-blur-md text-white transition-colors"
+                                        title="Zoom"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                         ))}
@@ -232,8 +276,23 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
                      {/* Success State */}
                      {status === TaskStatus.SUCCEEDED && imageUrl && (
                          <div className="w-full h-full flex flex-col items-center justify-center animate-fade-in">
-                             <div className="relative w-full h-full max-h-[80vh] flex items-center justify-center">
-                                 <img src={imageUrl} alt="Result" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+                             <div className="relative w-full h-full max-h-[80vh] flex items-center justify-center group">
+                                 <img 
+                                    src={imageUrl} 
+                                    alt="Result" 
+                                    className="max-w-full max-h-full object-contain rounded-lg shadow-2xl cursor-zoom-in" 
+                                    onClick={() => setLightboxUrl(imageUrl)}
+                                 />
+                                 <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                        onClick={() => setLightboxUrl(imageUrl)}
+                                        className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full backdrop-blur-md"
+                                    >
+                                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                        </svg>
+                                    </button>
+                                 </div>
                              </div>
                              <div className="mt-6 flex gap-4">
                                 <a 

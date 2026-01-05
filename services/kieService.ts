@@ -181,7 +181,13 @@ export const createKieTask = async (config: GenerationConfig, apiKey: string) =>
     throw new Error(errorData.msg || errorData.message || "Failed to create task");
   }
 
-  return response.json();
+  const apiResponse = await response.json();
+  
+  // Return both API response and the persistent URLs of uploaded images
+  return {
+    apiResponse,
+    uploadedUrls: processedImages
+  };
 };
 
 export const getJobInfo = async (taskId: string, _apiKeyIgnored: string) => {

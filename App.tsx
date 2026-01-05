@@ -165,8 +165,10 @@ const App: React.FC = () => {
       return;
     }
 
-    // Prepare snapshot of inputs
-    const inputPreviews = config.imageInputs.map(i => i.previewUrl);
+    // Temporary previews for immediate UI feedback (still blob URLs), 
+    // but we will update them with real URLs after upload
+    const tempPreviews = config.imageInputs.map(i => i.previewUrl);
+    
     const configSnapshot = {
       aspectRatio: config.aspectRatio,
       resolution: config.resolution,
@@ -178,14 +180,18 @@ const App: React.FC = () => {
       status: TaskStatus.SUBMITTED, 
       error: null, 
       rawJson: null,
-      inputs: inputPreviews,
+      inputs: tempPreviews,
       config: configSnapshot
     });
 
     try {
-      console.log("Creating Task...");
-      const creationResponse = await createKieTask(config, apiKey);
+      console.log("Creating Task (Uploading images)...");
+      
+      // NOTE: createKieTask now returns { apiResponse, uploadedUrls }
+      const { apiResponse: creationResponse, uploadedUrls } = await createKieTask(config, apiKey);
+      
       console.log("Task Creation Response:", creationResponse);
+      console.log("Persistent Uploaded URLs:", uploadedUrls);
 
       const creationData = Array.isArray(creationResponse) ? creationResponse[0] : creationResponse;
 
@@ -202,13 +208,14 @@ const App: React.FC = () => {
 
       const startTime = Date.now();
 
-      // Save to History (SQL persistence simulation)
+      // Save to History using PERMANENT URLs (uploadedUrls)
+      // This fixes the issue where history thumbnails were broken after reload
       const newHistoryItem: HistoryItem = {
         taskId: taskId,
         createdAt: startTime,
         status: TaskStatus.PROCESSING,
         prompt: config.prompt,
-        inputPreviews: inputPreviews,
+        inputPreviews: uploadedUrls, // Use real URLs here
         resultUrl: null,
         error: null,
         rawJson: creationData,
@@ -221,15 +228,14 @@ const App: React.FC = () => {
       saveHistoryItem(newHistoryItem);
       updateHistoryState();
 
-      // Setting state to PROCESSING triggers the useEffect above to start polling automatically
+      // Update Result state with permanent URLs as well
       setResult(prev => ({ 
         ...prev, 
         status: TaskStatus.PROCESSING, 
         rawJson: creationData,
         taskId: taskId,
         startTime: startTime,
-        // Ensure result has config snapshot
-        inputs: inputPreviews,
+        inputs: uploadedUrls,
         config: configSnapshot
       }));
 
