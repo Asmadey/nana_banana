@@ -12,6 +12,8 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
   const [viewMode, setViewMode] = useState<'preview' | 'json'>('preview');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [isTaskIdCopied, setIsTaskIdCopied] = useState(false);
+  const [isLinkCopied, setIsLinkCopied] = useState(false);
 
   // Timer logic
   useEffect(() => {
@@ -33,6 +35,22 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleCopyTaskId = () => {
+    if (taskId) {
+      navigator.clipboard.writeText(taskId);
+      setIsTaskIdCopied(true);
+      setTimeout(() => setIsTaskIdCopied(false), 2000);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (imageUrl) {
+      navigator.clipboard.writeText(imageUrl);
+      setIsLinkCopied(true);
+      setTimeout(() => setIsLinkCopied(false), 2000);
+    }
   };
 
   return (
@@ -81,33 +99,57 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
           <div className="w-full h-full flex flex-col items-center justify-center">
             
             {status === TaskStatus.PROCESSING || status === TaskStatus.SUBMITTED ? (
-              <div className="text-center p-12 bg-[#1a1a1a] rounded-xl border border-gray-800 shadow-xl max-w-sm w-full">
+              <div className="text-center p-8 bg-[#1a1a1a] rounded-xl border border-gray-800 shadow-xl max-w-sm w-full">
                 <div className="inline-block relative w-16 h-16 mb-6">
                   <div className="absolute top-0 left-0 w-full h-full border-4 border-gray-700 rounded-full"></div>
                   <div className="absolute top-0 left-0 w-full h-full border-4 border-t-blue-500 rounded-full animate-spin"></div>
                 </div>
                 
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div>
                     <h3 className="text-xl font-semibold text-white">Generating Image</h3>
                     <p className="text-gray-400 text-sm mt-1">Waiting for Nano Banana Pro</p>
                   </div>
                   
-                  <div className="flex flex-col gap-2 py-2 border-y border-gray-800">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Task ID</span>
-                      <span className="font-mono text-blue-300 select-all">{taskId || "..."}</span>
+                  <div className="flex flex-col gap-3 py-4 border-y border-gray-800 w-full">
+                    {/* Task ID Row */}
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-sm text-gray-500 font-medium whitespace-nowrap">Task ID</span>
+                      <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                        <span className="font-mono text-blue-300 text-xs truncate max-w-[180px]" title={taskId}>
+                          {taskId || "..."}
+                        </span>
+                        {taskId && (
+                          <button 
+                            onClick={handleCopyTaskId}
+                            className="text-gray-500 hover:text-white transition-colors p-1 rounded hover:bg-gray-700 flex-shrink-0"
+                            title="Copy Task ID"
+                          >
+                            {isTaskIdCopied ? (
+                              <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                              </svg>
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Elapsed</span>
-                      <span className="font-mono text-white">{formatTime(elapsedTime)}</span>
+
+                    {/* Elapsed Time Row */}
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-sm text-gray-500 font-medium">Elapsed</span>
+                      <span className="font-mono text-white text-sm">{formatTime(elapsedTime)}</span>
                     </div>
                   </div>
 
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <button 
                       onClick={onCheckStatus}
-                      className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors border border-gray-700"
+                      className="w-full px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors border border-gray-700 hover:border-gray-600"
                     >
                       Check Status Manually
                     </button>
@@ -123,7 +165,20 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
                 <p className="mt-2 text-red-300 text-sm">{error || "Unknown error occurred"}</p>
                 {taskId && (
                   <div className="mt-4 pt-4 border-t border-red-900/30">
-                     <p className="text-xs text-gray-400 mb-2">Task ID: {taskId}</p>
+                     <p className="text-xs text-gray-400 mb-2 flex items-center justify-center gap-2">
+                       Task ID: {taskId.substring(0, 8)}...
+                       <button onClick={handleCopyTaskId} className="hover:text-white" title="Copy Task ID">
+                          {isTaskIdCopied ? (
+                              <svg className="w-3 h-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                       </button>
+                     </p>
                      <button 
                       onClick={onCheckStatus}
                       className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-white text-sm rounded-lg transition-colors border border-red-800"
@@ -139,16 +194,35 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) =>
                    <img 
                     src={imageUrl} 
                     alt="Generated output" 
-                    className="max-w-full max-h-[75vh] object-contain rounded-lg"
+                    className="max-w-full max-h-[70vh] object-contain rounded-lg mx-auto"
                   />
-                  <div className="mt-3 flex items-center justify-between px-2 pb-1">
-                    <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">image</span>
-                    <a 
+                  <div className="mt-4 flex items-center gap-3 px-1">
+                     <button
+                        onClick={handleCopyLink}
+                        className="flex-1 flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-gray-800 text-gray-300 hover:text-white text-sm py-2.5 px-4 rounded-lg transition-all border border-gray-700 hover:border-gray-600"
+                     >
+                        {isLinkCopied ? (
+                             <>
+                                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span>Copied</span>
+                             </>
+                        ) : (
+                             <>
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                                <span>Copy Link</span>
+                             </>
+                        )}
+                     </button>
+                     <a 
                        href={imageUrl} 
                        download={`nano-banana-${Date.now()}`}
                        target="_blank"
                        rel="noreferrer"
-                       className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 font-medium transition-colors"
+                       className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm py-2.5 px-4 rounded-lg transition-all shadow-lg shadow-blue-900/20"
                      >
                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

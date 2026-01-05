@@ -45,39 +45,70 @@ const App: React.FC = () => {
       // Update raw JSON display
       setResult(prev => ({ ...prev, rawJson: info }));
 
-      const status = info?.data?.status || info?.status; 
+      // Check for status/state. Some endpoints return 'state', others 'status'.
+      // Based on user feedback: data.state = "success"
+      const data = info?.data || {};
+      const statusRaw = data.state || data.status || info.status; 
+      const status = String(statusRaw).toUpperCase();
 
       if (status === "SUCCEEDED" || status === "SUCCESS" || status === "COMPLETED") {
           if (pollingRef.current) clearInterval(pollingRef.current);
           
-          // Extract image URL
-          const outputData = info?.data?.output || info?.data?.result;
           let outputUrl = null;
 
-          if (outputData) {
-            if (Array.isArray(outputData.results) && outputData.results.length > 0) {
-                outputUrl = outputData.results[0];
-            } else if (typeof outputData === 'string') {
-                outputUrl = outputData;
-            } else if (outputData.image_url) {
-                outputUrl = outputData.image_url;
-            } else if (Array.isArray(outputData) && outputData.length > 0) {
-                  outputUrl = outputData[0];
+          // Strategy 1: Parse resultJson string (Specific for this API structure)
+          // Format: "resultJson": "{\"resultUrls\":[\"...\"]}"
+          if (data.resultJson) {
+            try {
+              const parsed = typeof data.resultJson === 'string' ? JSON.parse(data.resultJson) : data.resultJson;
+              if (parsed.resultUrls && Array.isArray(parsed.resultUrls) && parsed.resultUrls.length > 0) {
+                outputUrl = parsed.resultUrls[0];
+              }
+            } catch (e) {
+              console.warn("Error parsing resultJson:", e);
+            }
+          }
+
+          // Strategy 2: Fallback to standard output fields
+          if (!outputUrl) {
+            const outputData = data.output || data.result || data.results;
+            if (outputData) {
+              if (Array.isArray(outputData.results) && outputData.results.length > 0) {
+                  outputUrl = outputData.results[0];
+              } else if (typeof outputData === 'string') {
+                  outputUrl = outputData;
+              } else if (outputData.image_url) {
+                  outputUrl = outputData.image_url;
+              } else if (Array.isArray(outputData) && outputData.length > 0) {
+                    outputUrl = outputData[0];
+              }
             }
           }
           
-          setResult(prev => ({
-            ...prev,
-            status: TaskStatus.SUCCEEDED,
-            imageUrl: outputUrl,
-            rawJson: info
-          }));
+          if (outputUrl) {
+            setResult(prev => ({
+              ...prev,
+              status: TaskStatus.SUCCEEDED,
+              imageUrl: outputUrl,
+              rawJson: info
+            }));
+          } else {
+             // Task succeeded but no URL found yet? Keep polling or mark as error?
+             // For now, let's stop and show error to avoid infinite loop of success-without-image
+             setResult(prev => ({
+              ...prev,
+              status: TaskStatus.FAILED,
+              error: "Task succeeded but could not extract image URL from response.",
+              rawJson: info
+             }));
+          }
+
       } else if (status === "FAILED" || status === "FAILURE") {
           if (pollingRef.current) clearInterval(pollingRef.current);
           setResult(prev => ({
             ...prev,
             status: TaskStatus.FAILED,
-            error: info?.data?.error || info?.error || "Task failed on server",
+            error: data.error || data.failMsg || info.error || "Task failed on server",
             rawJson: info
           }));
       }
@@ -103,7 +134,7 @@ const App: React.FC = () => {
 
       // Robustly check for Task ID in various common API response patterns
       const taskId = 
-        creationResponse?.data?.taskId || // <--- Added this specific check based on user error report
+        creationResponse?.data?.taskId || 
         creationResponse?.data?.id || 
         creationResponse?.data?.task_id || 
         creationResponse?.data?.job_id ||
@@ -136,10 +167,10 @@ const App: React.FC = () => {
         startTime: Date.now()
       }));
 
-      // 2. Start Polling (Every 5 seconds as requested)
+      // 2. Start Polling (Every 5 seconds)
       if (pollingRef.current) clearInterval(pollingRef.current);
       
-      // Immediate check
+      // Immediate check to see if it was instant (or for debugging)
       // checkStatus(taskId, apiKey);
 
       pollingRef.current = window.setInterval(() => {
