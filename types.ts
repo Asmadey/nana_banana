@@ -50,3 +50,14 @@ export interface GeneratedImageResult {
   taskId?: string; // ID for polling/debugging
   startTime?: number; // Timestamp when task started
 }
+
+export interface HistoryItem {
+  taskId: string;
+  createdAt: number;
+  status: TaskStatus;
+  prompt: string;
+  inputPreviews: string[]; // URLs of input images
+  resultUrl: string | null;
+  error: string | null;
+  rawJson: any;
+}
