@@ -254,10 +254,10 @@ const App: React.FC = () => {
   const handleManualCheck = () => {
     if (result.taskId) {
       console.log("MANUAL check triggered for:", result.taskId);
-      alert(`Checking status for ID: ${result.taskId}`);
+      // alert removed to prevent popup
       checkStatus(result.taskId);
     } else {
-      alert("No active task to check.");
+      console.warn("No active task to check.");
     }
   };
 
@@ -297,13 +297,23 @@ const App: React.FC = () => {
       }
     });
 
-    // Also restore sidebar config
+    // Restore sidebar config AND input images
+    // Mapping stored URLs back to ImageInput objects
+    const restoredImages = item.inputPreviews 
+        ? item.inputPreviews.map(url => ({
+            id: Math.random().toString(36).substr(2, 9),
+            type: 'url' as const, // Treat restored inputs as URLs to avoid re-upload logic if possible, or just re-use URL
+            value: url,
+            previewUrl: url
+          })) 
+        : [];
+
     setConfig({
       prompt: item.prompt,
       aspectRatio: item.aspectRatio || AspectRatio.Square,
       resolution: item.resolution || ImageResolution.Res4K,
       outputFormat: item.outputFormat || OutputFormat.PNG,
-      imageInputs: [] // We don't restore actual files to input, just settings & prompt
+      imageInputs: restoredImages
     });
   };
 
@@ -324,6 +334,8 @@ const App: React.FC = () => {
       <ImageDisplay 
         result={result} 
         onCheckStatus={handleManualCheck}
+        onRegenerate={handleGenerate} 
+        isGenerating={result.status === TaskStatus.PROCESSING || result.status === TaskStatus.SUBMITTED}
       />
     </div>
   );
