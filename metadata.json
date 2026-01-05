@@ -1,0 +1,5 @@
+{
+  "name": "NanoBanano Studio",
+  "description": "A high-fidelity image generation studio using the Gemini 3 Pro Image (NanoBananoPro) model, featuring resolution control (1K, 2K, 4K), style customization, and text-based image editing using Gemini 2.5 Flash Image.",
+  "requestFramePermissions": []
+}
