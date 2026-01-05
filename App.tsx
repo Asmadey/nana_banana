@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ImageDisplay from './components/ImageDisplay';
 import { 
@@ -37,6 +37,56 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const checkStatus = useCallback(async (taskId: string, apiKey: string) => {
+    try {
+      const info = await getJobInfo(taskId, apiKey);
+      console.log("Polling Info:", info);
+
+      // Update raw JSON display
+      setResult(prev => ({ ...prev, rawJson: info }));
+
+      const status = info?.data?.status || info?.status; 
+
+      if (status === "SUCCEEDED" || status === "SUCCESS" || status === "COMPLETED") {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          
+          // Extract image URL
+          const outputData = info?.data?.output || info?.data?.result;
+          let outputUrl = null;
+
+          if (outputData) {
+            if (Array.isArray(outputData.results) && outputData.results.length > 0) {
+                outputUrl = outputData.results[0];
+            } else if (typeof outputData === 'string') {
+                outputUrl = outputData;
+            } else if (outputData.image_url) {
+                outputUrl = outputData.image_url;
+            } else if (Array.isArray(outputData) && outputData.length > 0) {
+                  outputUrl = outputData[0];
+            }
+          }
+          
+          setResult(prev => ({
+            ...prev,
+            status: TaskStatus.SUCCEEDED,
+            imageUrl: outputUrl,
+            rawJson: info
+          }));
+      } else if (status === "FAILED" || status === "FAILURE") {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          setResult(prev => ({
+            ...prev,
+            status: TaskStatus.FAILED,
+            error: info?.data?.error || info?.error || "Task failed on server",
+            rawJson: info
+          }));
+      }
+      // If RUNNING/QUEUED, do nothing, keep polling
+    } catch (pollError: any) {
+      console.error("Polling error", pollError);
+    }
+  }, []);
+
   const handleGenerate = async () => {
     const apiKey = getStoredApiKey();
     if (!apiKey) {
@@ -53,6 +103,7 @@ const App: React.FC = () => {
 
       // Robustly check for Task ID in various common API response patterns
       const taskId = 
+        creationResponse?.data?.taskId || // <--- Added this specific check based on user error report
         creationResponse?.data?.id || 
         creationResponse?.data?.task_id || 
         creationResponse?.data?.job_id ||
@@ -68,13 +119,10 @@ const App: React.FC = () => {
         creationResponse?.result?.id;
 
       if (!taskId) {
-        // If we have a successful response but no ID, it might be an immediate error wrapped in 200 OK
-        // Allow 200 as a success code (some APIs return code: 200, msg: success)
         if (creationResponse?.code && creationResponse?.code !== 0 && creationResponse?.code !== 200 && creationResponse?.msg) {
              throw new Error(`API Error (${creationResponse.code}): ${creationResponse.msg}`);
         }
         
-        // Include the response in the error message for debugging
         const debugResponse = JSON.stringify(creationResponse);
         console.error("Missing Task ID. Full Response:", debugResponse);
         throw new Error(`No Task ID returned. API Response: ${debugResponse}`);
@@ -83,69 +131,20 @@ const App: React.FC = () => {
       setResult(prev => ({ 
         ...prev, 
         status: TaskStatus.PROCESSING, 
-        rawJson: creationResponse 
+        rawJson: creationResponse,
+        taskId: taskId,
+        startTime: Date.now()
       }));
 
-      // 2. Start Polling
+      // 2. Start Polling (Every 5 seconds as requested)
       if (pollingRef.current) clearInterval(pollingRef.current);
       
-      pollingRef.current = window.setInterval(async () => {
-        try {
-          const info = await getJobInfo(taskId, apiKey);
-          
-          // Debugging log to understand response structure
-          console.log("Polling Info:", info);
+      // Immediate check
+      // checkStatus(taskId, apiKey);
 
-          // Update raw JSON display
-          setResult(prev => ({ ...prev, rawJson: info }));
-
-          // Check Status - Logic depends on actual API response structure
-          // Assuming structure based on typical Kie/Async APIs: 
-          // data.status might be "SUCCESS", "FAILURE", "QUEUED", "RUNNING"
-          // Or sometimes simpler like status: "SUCCESS" at root
-          const status = info?.data?.status || info?.status; 
-
-          if (status === "SUCCEEDED" || status === "SUCCESS" || status === "COMPLETED") {
-             if (pollingRef.current) clearInterval(pollingRef.current);
-             
-             // Extract image URL. Assuming data.output.results[0] or data.result or data.output.image_url
-             const outputData = info?.data?.output || info?.data?.result;
-             let outputUrl = null;
-
-             if (outputData) {
-                if (Array.isArray(outputData.results) && outputData.results.length > 0) {
-                    outputUrl = outputData.results[0];
-                } else if (typeof outputData === 'string') {
-                    outputUrl = outputData;
-                } else if (outputData.image_url) {
-                    outputUrl = outputData.image_url;
-                } else if (Array.isArray(outputData) && outputData.length > 0) {
-                     outputUrl = outputData[0];
-                }
-             }
-             
-             setResult(prev => ({
-               ...prev,
-               status: TaskStatus.SUCCEEDED,
-               imageUrl: outputUrl,
-               rawJson: info
-             }));
-          } else if (status === "FAILED" || status === "FAILURE") {
-             if (pollingRef.current) clearInterval(pollingRef.current);
-             setResult(prev => ({
-               ...prev,
-               status: TaskStatus.FAILED,
-               error: info?.data?.error || info?.error || "Task failed on server",
-               rawJson: info
-             }));
-          }
-          // If RUNNING/QUEUED, do nothing, keep polling
-
-        } catch (pollError: any) {
-          console.error("Polling error", pollError);
-          // Don't stop polling immediately on one network blip
-        }
-      }, 1000); // Poll every 1 second
+      pollingRef.current = window.setInterval(() => {
+        checkStatus(taskId, apiKey);
+      }, 5000);
 
     } catch (e: any) {
       console.error("Generation Start Failed", e);
@@ -158,6 +157,13 @@ const App: React.FC = () => {
     }
   };
 
+  const handleManualCheck = () => {
+    if (result.taskId) {
+      const apiKey = getStoredApiKey();
+      checkStatus(result.taskId, apiKey);
+    }
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-[#0a0a0a] text-gray-200 font-sans">
       <Sidebar 
@@ -166,7 +172,10 @@ const App: React.FC = () => {
         onGenerate={handleGenerate} 
         isGenerating={result.status === TaskStatus.PROCESSING || result.status === TaskStatus.SUBMITTED}
       />
-      <ImageDisplay result={result} />
+      <ImageDisplay 
+        result={result} 
+        onCheckStatus={handleManualCheck}
+      />
     </div>
   );
 };

@@ -1,3 +1,4 @@
+
 export enum AspectRatio {
   Square = "1:1",
   Portrait34 = "3:4",
@@ -46,4 +47,6 @@ export interface GeneratedImageResult {
   progress?: number;
   error: string | null;
   rawJson?: any; // To display JSON response
+  taskId?: string; // ID for polling/debugging
+  startTime?: number; // Timestamp when task started
 }

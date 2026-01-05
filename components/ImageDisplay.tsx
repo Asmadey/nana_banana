@@ -1,15 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GeneratedImageResult, TaskStatus } from '../types';
 import SettingsModal from './SettingsModal';
 
 interface ImageDisplayProps {
   result: GeneratedImageResult;
+  onCheckStatus?: () => void;
 }
 
-const ImageDisplay: React.FC<ImageDisplayProps> = ({ result }) => {
-  const { imageUrl, status, error, rawJson } = result;
+const ImageDisplay: React.FC<ImageDisplayProps> = ({ result, onCheckStatus }) => {
+  const { imageUrl, status, error, rawJson, taskId, startTime } = result;
   const [viewMode, setViewMode] = useState<'preview' | 'json'>('preview');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState(0);
+
+  // Timer logic
+  useEffect(() => {
+    let interval: number;
+    if ((status === TaskStatus.PROCESSING || status === TaskStatus.SUBMITTED) && startTime) {
+      // Update timer immediately
+      setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+      
+      interval = window.setInterval(() => {
+        setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+    } else {
+      setElapsedTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [status, startTime]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
     <div className="flex-1 bg-[#111] flex flex-col h-full overflow-hidden text-gray-200 relative">
@@ -57,15 +81,37 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result }) => {
           <div className="w-full h-full flex flex-col items-center justify-center">
             
             {status === TaskStatus.PROCESSING || status === TaskStatus.SUBMITTED ? (
-              <div className="text-center p-12">
-                <div className="inline-block relative w-16 h-16 mb-4">
-                  <div className="absolute top-0 left-0 w-full h-full border-4 border-gray-800 rounded-full"></div>
+              <div className="text-center p-12 bg-[#1a1a1a] rounded-xl border border-gray-800 shadow-xl max-w-sm w-full">
+                <div className="inline-block relative w-16 h-16 mb-6">
+                  <div className="absolute top-0 left-0 w-full h-full border-4 border-gray-700 rounded-full"></div>
                   <div className="absolute top-0 left-0 w-full h-full border-4 border-t-blue-500 rounded-full animate-spin"></div>
                 </div>
-                <h3 className="text-lg font-medium text-white">Generating...</h3>
-                <p className="mt-2 text-gray-500 text-sm">Waiting for Nano Banana Pro</p>
-                <div className="mt-2 text-xs text-gray-600 bg-gray-900 px-3 py-1 rounded-full inline-block">
-                  Status: {status}
+                
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white">Generating Image</h3>
+                    <p className="text-gray-400 text-sm mt-1">Waiting for Nano Banana Pro</p>
+                  </div>
+                  
+                  <div className="flex flex-col gap-2 py-2 border-y border-gray-800">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Task ID</span>
+                      <span className="font-mono text-blue-300 select-all">{taskId || "..."}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Elapsed</span>
+                      <span className="font-mono text-white">{formatTime(elapsedTime)}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button 
+                      onClick={onCheckStatus}
+                      className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors border border-gray-700"
+                    >
+                      Check Status Manually
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : status === TaskStatus.FAILED || error ? (
@@ -75,6 +121,17 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ result }) => {
                 </div>
                 <h3 className="text-lg font-medium text-white">Generation Failed</h3>
                 <p className="mt-2 text-red-300 text-sm">{error || "Unknown error occurred"}</p>
+                {taskId && (
+                  <div className="mt-4 pt-4 border-t border-red-900/30">
+                     <p className="text-xs text-gray-400 mb-2">Task ID: {taskId}</p>
+                     <button 
+                      onClick={onCheckStatus}
+                      className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-white text-sm rounded-lg transition-colors border border-red-800"
+                    >
+                      Retry Status Check
+                    </button>
+                  </div>
+                )}
               </div>
             ) : imageUrl ? (
               <div className="relative group max-w-full max-h-full">

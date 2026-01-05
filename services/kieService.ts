@@ -8,8 +8,10 @@ const BASE_URL = "https://api.kie.ai/api/v1/jobs";
 // Supabase Configuration
 const SUPABASE_PROJECT_ID = "ihbzndymkizrpeoawojd";
 const SUPABASE_BUCKET = "Mini Site";
-// Updated default key as requested
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImloYnpuZHlta2l6cnBlb2F3b2pkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTc0Mjk3NiwiZXhwIjoyMDgxMzE4OTc2fQ.Wmi2HFhgNmz0bZUe5WR01BNUJwrbE_YSnUH_RqxyMko";
+
+// Updated default Vercel Token
+const DEFAULT_VERCEL_TOKEN = "vercel_blob_rw_uaekNcBUX3shWE6Q_2knCeAmR6XCA8j2chvspa8BaUX7aI5";
 
 export const getStoredApiKey = () => {
   return localStorage.getItem("kie_api_key") || DEFAULT_API_KEY;
@@ -28,7 +30,7 @@ export const setStoredSupabaseKey = (key: string) => {
 };
 
 export const getStoredVercelToken = () => {
-  return localStorage.getItem("vercel_blob_token") || "";
+  return localStorage.getItem("vercel_blob_token") || DEFAULT_VERCEL_TOKEN;
 };
 
 export const setStoredVercelToken = (token: string) => {
