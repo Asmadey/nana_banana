@@ -43,160 +43,82 @@ const App: React.FC = () => {
   }, []);
 
   // --- Centralized Status Check Logic ---
-  const checkStatus = useCallback(async (taskId: string, apiKey: string) => {
+  const checkStatus = useCallback(async (taskId: string) => {
     try {
-      console.log(`[Polling] Checking status for Task ID: ${taskId}`);
-      let info = await getJobInfo(taskId, apiKey);
+      console.log(`[App] Checking status for Task ID: ${taskId}`);
       
-      // Handle array response
-      if (Array.isArray(info)) {
-        info = info.length > 0 ? info[0] : {};
-      }
+      // We pass empty string for apiKey because getJobInfo now hardcodes it as requested
+      let response = await getJobInfo(taskId, "");
+      
+      console.log("[App] API Response:", response);
 
-      console.log("[Polling] Raw Info:", info);
-
-      // Update raw JSON display immediately so user sees activity
+      // 1. Update Raw JSON View
       setResult(prev => {
-        // Only update if it's the same task to avoid UI flickering if user switched tasks quickly
         if (prev.taskId === taskId) {
-            return { ...prev, rawJson: info };
+            return { ...prev, rawJson: response };
         }
         return prev;
       });
 
-      // Extract Status
-      const data = info?.data || {};
-      const statusRaw = data.state || data.status || info.status || info.state; 
-      
-      let derivedStatus = statusRaw ? String(statusRaw).toUpperCase() : "";
-      
-      // Fallback: if no status but resultJson exists, assume success
-      // If the API returns resultJson, it means the job is done, regardless of what 'state' says
-      if (data.resultJson) {
-         console.log("[Polling] 'resultJson' found, assuming SUCCESS.");
-         derivedStatus = "SUCCESS";
-      }
+      const data = response?.data;
+      if (!data) return;
 
-      console.log(`[Polling] Derived Status: ${derivedStatus}`);
+      const state = (data.state || data.status || "").toLowerCase();
+      console.log(`[App] Task State: ${state}`);
 
-      if (derivedStatus === "SUCCEEDED" || derivedStatus === "SUCCESS" || derivedStatus === "COMPLETED") {
-          
+      if (state === "success" || state === "succeeded") {
           let outputUrl = null;
 
-          // Strategy 1: Parse resultJson (Prioritize this)
+          // Parse resultJson string
+          // Expected format: "{\"resultUrls\":[\"https://...\"]}"
           if (data.resultJson) {
-            try {
-              let resultObj = data.resultJson;
-              
-              // It comes as a stringified JSON
-              if (typeof resultObj === 'string') {
-                  console.log("[Polling] Parsing resultJson string:", resultObj);
-                  try { 
-                    resultObj = JSON.parse(resultObj); 
-                  } catch (e) { 
-                    console.error("[Polling] JSON Parse Error 1:", e);
+              try {
+                  const parsedResult = JSON.parse(data.resultJson);
+                  if (parsedResult.resultUrls && parsedResult.resultUrls.length > 0) {
+                      outputUrl = parsedResult.resultUrls[0];
                   }
+              } catch (e) {
+                  console.error("[App] Error parsing resultJson string:", e);
               }
-              
-              // Double check if it was double-encoded
-              if (typeof resultObj === 'string') {
-                 try { 
-                    resultObj = JSON.parse(resultObj); 
-                 } catch (e) { 
-                    console.error("[Polling] JSON Parse Error 2:", e);
-                 }
-              }
-
-              // Now check structure
-              if (resultObj?.resultUrls && Array.isArray(resultObj.resultUrls) && resultObj.resultUrls.length > 0) {
-                outputUrl = resultObj.resultUrls[0];
-              } else if (resultObj?.image_url) {
-                outputUrl = resultObj.image_url;
-              }
-
-              console.log("[Polling] Parsed URL from resultJson:", outputUrl);
-
-            } catch (e) {
-              console.warn("Error processing resultJson block:", e);
-            }
           }
 
-          // Strategy 2: Fallback fields if resultJson failed or empty
-          if (!outputUrl) {
-            const outputData = data.output || data.result || data.results;
-            if (outputData) {
-              if (Array.isArray(outputData.results) && outputData.results.length > 0) {
-                  outputUrl = outputData.results[0];
-              } else if (typeof outputData === 'string') {
-                  outputUrl = outputData;
-              } else if (outputData.image_url) {
-                  outputUrl = outputData.image_url;
-              } else if (Array.isArray(outputData) && outputData.length > 0) {
-                    outputUrl = outputData[0];
-              }
-            }
-          }
-          
           if (outputUrl) {
-            console.log("[Polling] Final Image URL:", outputUrl);
-            setResult(prev => ({
-              ...prev,
-              status: TaskStatus.SUCCEEDED,
-              imageUrl: outputUrl,
-              rawJson: info
-            }));
-            
-            updateHistoryItem(taskId, {
-              status: TaskStatus.SUCCEEDED,
-              resultUrl: outputUrl,
-              rawJson: info
-            });
-            updateHistoryState();
-
+              console.log("[App] Success! Image URL:", outputUrl);
+              setResult(prev => ({
+                  ...prev,
+                  status: TaskStatus.SUCCEEDED,
+                  imageUrl: outputUrl,
+                  rawJson: response
+              }));
+              
+              updateHistoryItem(taskId, {
+                  status: TaskStatus.SUCCEEDED,
+                  resultUrl: outputUrl,
+                  rawJson: response
+              });
+              updateHistoryState();
           } else {
-             console.error("[Polling] Success detected but NO URL found in:", data);
-             setResult(prev => ({
-              ...prev,
-              status: TaskStatus.FAILED,
-              error: "Task completed but image URL extraction failed. Check JSON tab.",
-              rawJson: info
-             }));
-
-             updateHistoryItem(taskId, {
-              status: TaskStatus.FAILED,
-              error: "No URL found in success response",
-              rawJson: info
-            });
-            updateHistoryState();
+             console.warn("[App] Status is success but could not find URL in resultJson");
           }
 
-      } else if (derivedStatus === "FAILED" || derivedStatus === "FAILURE") {
-          const errorMsg = data.error || data.failMsg || info.error || "Task failed on server";
-          console.error("[Polling] Task Failed:", errorMsg);
-          
+      } else if (state === "failed" || state === "failure") {
+          const errMsg = data.failMsg || data.error || "Unknown error";
           setResult(prev => ({
-            ...prev,
-            status: TaskStatus.FAILED,
-            error: errorMsg,
-            rawJson: info
+              ...prev,
+              status: TaskStatus.FAILED,
+              error: errMsg,
+              rawJson: response
           }));
-
-          updateHistoryItem(taskId, {
-            status: TaskStatus.FAILED,
-            error: errorMsg,
-            rawJson: info
+           updateHistoryItem(taskId, {
+              status: TaskStatus.FAILED,
+              error: errMsg,
+              rawJson: response
           });
           updateHistoryState();
-      } 
-      // If derivedStatus is empty or RUNNING/QUEUED, do nothing. 
-      // The useEffect loop or manual click will trigger this again.
+      }
 
     } catch (pollError: any) {
-      console.error("[Polling] Network/Parse Error:", pollError);
-      setResult(prev => ({ 
-        ...prev, 
-        rawJson: { error: pollError.message, details: "Polling check failed, see console." } 
-      }));
+      console.error("[App] Check Status Failed:", pollError);
     }
   }, [updateHistoryState]);
 
@@ -205,25 +127,24 @@ const App: React.FC = () => {
   useEffect(() => {
     let intervalId: number;
 
-    const needsPolling = (result.status === TaskStatus.PROCESSING || result.status === TaskStatus.SUBMITTED) && result.taskId;
+    const isRunning = result.status === TaskStatus.PROCESSING || result.status === TaskStatus.SUBMITTED;
+    const currentTaskId = result.taskId;
 
-    if (needsPolling) {
-      const apiKey = getStoredApiKey();
-      const currentTaskId = result.taskId!;
-
-      console.log(`[Effect] Starting auto-polling for ${currentTaskId}`);
+    if (isRunning && currentTaskId) {
+      console.log(`[App] Starting 5s polling for ${currentTaskId}`);
       
       // Immediate check
-      checkStatus(currentTaskId, apiKey);
+      checkStatus(currentTaskId);
 
       // Interval check every 5s
       intervalId = window.setInterval(() => {
-        checkStatus(currentTaskId, apiKey);
+        checkStatus(currentTaskId);
       }, 5000); 
     }
 
     return () => {
       if (intervalId) {
+        console.log(`[App] Stopping polling`);
         clearInterval(intervalId);
       }
     };
@@ -254,10 +175,7 @@ const App: React.FC = () => {
         creationData?.id;
 
       if (!taskId) {
-        if (creationData?.code && creationData?.code !== 0 && creationData?.code !== 200 && creationData?.msg) {
-             throw new Error(`API Error (${creationData.code}): ${creationData.msg}`);
-        }
-        throw new Error(`No Task ID returned.`);
+        throw new Error(`No Task ID returned. Msg: ${creationData?.msg || 'Unknown'}`);
       }
 
       const startTime = Date.now();
@@ -298,18 +216,15 @@ const App: React.FC = () => {
 
   const handleManualCheck = () => {
     if (result.taskId) {
-      const apiKey = getStoredApiKey();
       console.log("MANUAL check triggered for:", result.taskId);
-      alert(`Checking status for ${result.taskId}... Check Console for details.`);
-      checkStatus(result.taskId, apiKey);
+      alert(`Checking status for ID: ${result.taskId}`);
+      checkStatus(result.taskId);
     } else {
       alert("No active task to check.");
     }
   };
 
   const handleHistorySelect = (item: HistoryItem) => {
-    // If we select an item that is still processing, the status update here
-    // will trigger the useEffect to start polling again automatically.
     setResult({
       imageUrl: item.resultUrl,
       status: item.status,

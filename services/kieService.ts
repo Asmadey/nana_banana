@@ -184,21 +184,26 @@ export const createKieTask = async (config: GenerationConfig, apiKey: string) =>
   return response.json();
 };
 
-export const getJobInfo = async (jobId: string, apiKey: string) => {
-  const url = new URL(`${BASE_URL}/recordInfo`);
-  url.searchParams.append("id", jobId);
-  // CRITICAL: Add timestamp to prevent browser caching of the status check
-  url.searchParams.append("_t", Date.now().toString());
+export const getJobInfo = async (jobId: string, _apiKeyIgnored: string) => {
+  // HARDCODED Key as requested by user
+  const SPECIFIC_KEY = "f128787b6e0a3780b319a4d13119abf2";
+  
+  // Construct URL with ID parameter
+  // Adding timestamp _t to prevent browser caching
+  const url = `https://api.kie.ai/api/v1/jobs/recordInfo?id=${jobId}&_t=${Date.now()}`;
 
-  const response = await fetch(url.toString(), {
+  console.log(`[kieService] GET ${url}`);
+
+  const response = await fetch(url, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${apiKey}`
+      'Authorization': `Bearer ${SPECIFIC_KEY}`
     }
   });
 
   if (!response.ok) {
-     throw new Error("Failed to fetch job info");
+     const txt = await response.text();
+     throw new Error(`Failed to fetch job info: ${response.status} ${txt}`);
   }
 
   return response.json();
