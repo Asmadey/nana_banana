@@ -187,6 +187,8 @@ export const createKieTask = async (config: GenerationConfig, apiKey: string) =>
 export const getJobInfo = async (jobId: string, apiKey: string) => {
   const url = new URL(`${BASE_URL}/recordInfo`);
   url.searchParams.append("id", jobId);
+  // CRITICAL: Add timestamp to prevent browser caching of the status check
+  url.searchParams.append("_t", Date.now().toString());
 
   const response = await fetch(url.toString(), {
     method: 'GET',

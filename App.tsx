@@ -53,6 +53,8 @@ const App: React.FC = () => {
         info = info.length > 0 ? info[0] : {};
       }
 
+      console.log("[Polling] Raw Info:", info);
+
       // Update raw JSON display immediately so user sees activity
       setResult(prev => {
         // Only update if it's the same task to avoid UI flickering if user switched tasks quickly
@@ -67,8 +69,11 @@ const App: React.FC = () => {
       const statusRaw = data.state || data.status || info.status || info.state; 
       
       let derivedStatus = statusRaw ? String(statusRaw).toUpperCase() : "";
+      
       // Fallback: if no status but resultJson exists, assume success
-      if (!derivedStatus && data.resultJson) {
+      // If the API returns resultJson, it means the job is done, regardless of what 'state' says
+      if (data.resultJson) {
+         console.log("[Polling] 'resultJson' found, assuming SUCCESS.");
          derivedStatus = "SUCCESS";
       }
 
@@ -78,26 +83,45 @@ const App: React.FC = () => {
           
           let outputUrl = null;
 
-          // Strategy 1: Parse resultJson
+          // Strategy 1: Parse resultJson (Prioritize this)
           if (data.resultJson) {
             try {
               let resultObj = data.resultJson;
+              
+              // It comes as a stringified JSON
               if (typeof resultObj === 'string') {
-                  try { resultObj = JSON.parse(resultObj); } catch (e) { /* ignore */ }
+                  console.log("[Polling] Parsing resultJson string:", resultObj);
+                  try { 
+                    resultObj = JSON.parse(resultObj); 
+                  } catch (e) { 
+                    console.error("[Polling] JSON Parse Error 1:", e);
+                  }
               }
-              if (typeof resultObj === 'string') { // Double encoded check
-                 try { resultObj = JSON.parse(resultObj); } catch (e) { /* ignore */ }
+              
+              // Double check if it was double-encoded
+              if (typeof resultObj === 'string') {
+                 try { 
+                    resultObj = JSON.parse(resultObj); 
+                 } catch (e) { 
+                    console.error("[Polling] JSON Parse Error 2:", e);
+                 }
               }
 
+              // Now check structure
               if (resultObj?.resultUrls && Array.isArray(resultObj.resultUrls) && resultObj.resultUrls.length > 0) {
                 outputUrl = resultObj.resultUrls[0];
+              } else if (resultObj?.image_url) {
+                outputUrl = resultObj.image_url;
               }
+
+              console.log("[Polling] Parsed URL from resultJson:", outputUrl);
+
             } catch (e) {
-              console.warn("Error processing resultJson:", e);
+              console.warn("Error processing resultJson block:", e);
             }
           }
 
-          // Strategy 2: Fallback fields
+          // Strategy 2: Fallback fields if resultJson failed or empty
           if (!outputUrl) {
             const outputData = data.output || data.result || data.results;
             if (outputData) {
@@ -114,7 +138,7 @@ const App: React.FC = () => {
           }
           
           if (outputUrl) {
-            console.log("[Polling] Success! URL:", outputUrl);
+            console.log("[Polling] Final Image URL:", outputUrl);
             setResult(prev => ({
               ...prev,
               status: TaskStatus.SUCCEEDED,
@@ -130,11 +154,11 @@ const App: React.FC = () => {
             updateHistoryState();
 
           } else {
-             console.error("[Polling] Success but NO URL found");
+             console.error("[Polling] Success detected but NO URL found in:", data);
              setResult(prev => ({
               ...prev,
               status: TaskStatus.FAILED,
-              error: "Task completed but image URL missing from response.",
+              error: "Task completed but image URL extraction failed. Check JSON tab.",
               rawJson: info
              }));
 
@@ -164,46 +188,45 @@ const App: React.FC = () => {
           });
           updateHistoryState();
       } 
-      // If still running, we do nothing. The useEffect loop will call this again.
+      // If derivedStatus is empty or RUNNING/QUEUED, do nothing. 
+      // The useEffect loop or manual click will trigger this again.
 
     } catch (pollError: any) {
       console.error("[Polling] Network/Parse Error:", pollError);
       setResult(prev => ({ 
         ...prev, 
-        rawJson: { error: pollError.message, details: "Polling check failed, retrying..." } 
+        rawJson: { error: pollError.message, details: "Polling check failed, see console." } 
       }));
     }
   }, [updateHistoryState]);
 
 
-  // --- Polling Effect ---
-  // This effect guarantees that whenever the status is PROCESSING, the app polls.
-  // It survives component re-renders and ensures consistency.
+  // --- Polling Effect (Cron-like logic) ---
   useEffect(() => {
     let intervalId: number;
 
-    if ((result.status === TaskStatus.PROCESSING || result.status === TaskStatus.SUBMITTED) && result.taskId) {
+    const needsPolling = (result.status === TaskStatus.PROCESSING || result.status === TaskStatus.SUBMITTED) && result.taskId;
+
+    if (needsPolling) {
       const apiKey = getStoredApiKey();
-      const currentTaskId = result.taskId;
+      const currentTaskId = result.taskId!;
 
-      console.log(`[Effect] Starting polling for ${currentTaskId}`);
+      console.log(`[Effect] Starting auto-polling for ${currentTaskId}`);
       
-      // Check immediately (after small delay to allow API to register)
-      const initialTimer = setTimeout(() => {
-        checkStatus(currentTaskId, apiKey);
-      }, 1000);
+      // Immediate check
+      checkStatus(currentTaskId, apiKey);
 
-      // Then poll every 5 seconds
+      // Interval check every 5s
       intervalId = window.setInterval(() => {
         checkStatus(currentTaskId, apiKey);
-      }, 5000);
-
-      return () => {
-        console.log(`[Effect] Stopping polling for ${currentTaskId}`);
-        clearTimeout(initialTimer);
-        clearInterval(intervalId);
-      };
+      }, 5000); 
     }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, [result.status, result.taskId, checkStatus]);
 
 
@@ -276,8 +299,11 @@ const App: React.FC = () => {
   const handleManualCheck = () => {
     if (result.taskId) {
       const apiKey = getStoredApiKey();
-      console.log("Manual check triggered for:", result.taskId);
+      console.log("MANUAL check triggered for:", result.taskId);
+      alert(`Checking status for ${result.taskId}... Check Console for details.`);
       checkStatus(result.taskId, apiKey);
+    } else {
+      alert("No active task to check.");
     }
   };
 
