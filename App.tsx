@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import HistorySidebar from './components/HistorySidebar';
 import ImageDisplay from './components/ImageDisplay';
@@ -32,79 +32,63 @@ const App: React.FC = () => {
   });
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const pollingRef = useRef<number | null>(null);
-
+  
   // Load history on mount
   useEffect(() => {
     setHistory(getHistory());
-  }, []);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
   }, []);
 
   const updateHistoryState = useCallback(() => {
     setHistory(getHistory());
   }, []);
 
+  // --- Centralized Status Check Logic ---
   const checkStatus = useCallback(async (taskId: string, apiKey: string) => {
     try {
-      console.log(`Checking status for Task ID: ${taskId}`);
+      console.log(`[Polling] Checking status for Task ID: ${taskId}`);
       let info = await getJobInfo(taskId, apiKey);
-      console.log("API Response Info:", info);
-
-      // Handle case where API might return an array (e.g. [ { code: 200, ... } ])
+      
+      // Handle array response
       if (Array.isArray(info)) {
         info = info.length > 0 ? info[0] : {};
       }
 
-      // Update raw JSON display so user can see what's happening
-      setResult(prev => ({ ...prev, rawJson: info }));
+      // Update raw JSON display immediately so user sees activity
+      setResult(prev => {
+        // Only update if it's the same task to avoid UI flickering if user switched tasks quickly
+        if (prev.taskId === taskId) {
+            return { ...prev, rawJson: info };
+        }
+        return prev;
+      });
 
-      // Check for status/state. 
+      // Extract Status
       const data = info?.data || {};
       const statusRaw = data.state || data.status || info.status || info.state; 
       
-      // If we absolutely cannot find a status but we have resultJson, assume success
       let derivedStatus = statusRaw ? String(statusRaw).toUpperCase() : "";
+      // Fallback: if no status but resultJson exists, assume success
       if (!derivedStatus && data.resultJson) {
          derivedStatus = "SUCCESS";
       }
 
-      console.log(`Derived Status: ${derivedStatus}`);
+      console.log(`[Polling] Derived Status: ${derivedStatus}`);
 
       if (derivedStatus === "SUCCEEDED" || derivedStatus === "SUCCESS" || derivedStatus === "COMPLETED") {
-          if (pollingRef.current) clearInterval(pollingRef.current);
           
           let outputUrl = null;
 
-          // Strategy 1: Parse resultJson string
+          // Strategy 1: Parse resultJson
           if (data.resultJson) {
             try {
               let resultObj = data.resultJson;
-              
-              // Handle stringified JSON
               if (typeof resultObj === 'string') {
-                  try {
-                    resultObj = JSON.parse(resultObj);
-                  } catch (e) {
-                    console.warn("First JSON parse failed", e);
-                  }
+                  try { resultObj = JSON.parse(resultObj); } catch (e) { /* ignore */ }
               }
-              // Handle double-stringified JSON (rare but possible)
-              if (typeof resultObj === 'string') {
-                 try {
-                    resultObj = JSON.parse(resultObj);
-                 } catch (e) {
-                    console.warn("Second JSON parse failed", e);
-                 }
+              if (typeof resultObj === 'string') { // Double encoded check
+                 try { resultObj = JSON.parse(resultObj); } catch (e) { /* ignore */ }
               }
 
-              console.log("Parsed resultJson object:", resultObj);
-              
               if (resultObj?.resultUrls && Array.isArray(resultObj.resultUrls) && resultObj.resultUrls.length > 0) {
                 outputUrl = resultObj.resultUrls[0];
               }
@@ -113,7 +97,7 @@ const App: React.FC = () => {
             }
           }
 
-          // Strategy 2: Fallback to other fields
+          // Strategy 2: Fallback fields
           if (!outputUrl) {
             const outputData = data.output || data.result || data.results;
             if (outputData) {
@@ -130,7 +114,7 @@ const App: React.FC = () => {
           }
           
           if (outputUrl) {
-            console.log("Image URL found:", outputUrl);
+            console.log("[Polling] Success! URL:", outputUrl);
             setResult(prev => ({
               ...prev,
               status: TaskStatus.SUCCEEDED,
@@ -138,7 +122,6 @@ const App: React.FC = () => {
               rawJson: info
             }));
             
-            // Update History
             updateHistoryItem(taskId, {
               status: TaskStatus.SUCCEEDED,
               resultUrl: outputUrl,
@@ -147,12 +130,11 @@ const App: React.FC = () => {
             updateHistoryState();
 
           } else {
-             console.error("Task Success but NO Image URL found");
-             // Task marked as success but no URL found - STOP SPINNER
+             console.error("[Polling] Success but NO URL found");
              setResult(prev => ({
               ...prev,
-              status: TaskStatus.FAILED, // Mark as failed in UI to stop spinner
-              error: "Task completed successfully but image URL could not be parsed. See JSON tab.",
+              status: TaskStatus.FAILED,
+              error: "Task completed but image URL missing from response.",
               rawJson: info
              }));
 
@@ -165,9 +147,8 @@ const App: React.FC = () => {
           }
 
       } else if (derivedStatus === "FAILED" || derivedStatus === "FAILURE") {
-          if (pollingRef.current) clearInterval(pollingRef.current);
           const errorMsg = data.error || data.failMsg || info.error || "Task failed on server";
-          console.error("Task Failed:", errorMsg);
+          console.error("[Polling] Task Failed:", errorMsg);
           
           setResult(prev => ({
             ...prev,
@@ -182,20 +163,49 @@ const App: React.FC = () => {
             rawJson: info
           });
           updateHistoryState();
-      } else {
-          console.log("Task still processing...");
-      }
-      // If RUNNING/QUEUED, do nothing, keep polling
+      } 
+      // If still running, we do nothing. The useEffect loop will call this again.
+
     } catch (pollError: any) {
-      console.error("Polling error caught in App.tsx:", pollError);
-      // We do NOT stop polling on network error immediately, hoping it's transient.
-      // But we update the JSON view so user sees the error.
+      console.error("[Polling] Network/Parse Error:", pollError);
       setResult(prev => ({ 
         ...prev, 
-        rawJson: { error: pollError.message, details: "Polling failed (network/parsing)" } 
+        rawJson: { error: pollError.message, details: "Polling check failed, retrying..." } 
       }));
     }
   }, [updateHistoryState]);
+
+
+  // --- Polling Effect ---
+  // This effect guarantees that whenever the status is PROCESSING, the app polls.
+  // It survives component re-renders and ensures consistency.
+  useEffect(() => {
+    let intervalId: number;
+
+    if ((result.status === TaskStatus.PROCESSING || result.status === TaskStatus.SUBMITTED) && result.taskId) {
+      const apiKey = getStoredApiKey();
+      const currentTaskId = result.taskId;
+
+      console.log(`[Effect] Starting polling for ${currentTaskId}`);
+      
+      // Check immediately (after small delay to allow API to register)
+      const initialTimer = setTimeout(() => {
+        checkStatus(currentTaskId, apiKey);
+      }, 1000);
+
+      // Then poll every 5 seconds
+      intervalId = window.setInterval(() => {
+        checkStatus(currentTaskId, apiKey);
+      }, 5000);
+
+      return () => {
+        console.log(`[Effect] Stopping polling for ${currentTaskId}`);
+        clearTimeout(initialTimer);
+        clearInterval(intervalId);
+      };
+    }
+  }, [result.status, result.taskId, checkStatus]);
+
 
   const handleGenerate = async () => {
     const apiKey = getStoredApiKey();
@@ -207,12 +217,10 @@ const App: React.FC = () => {
     setResult({ imageUrl: null, status: TaskStatus.SUBMITTED, error: null, rawJson: null });
 
     try {
-      // 1. Create Task
       console.log("Creating Task...");
       const creationResponse = await createKieTask(config, apiKey);
       console.log("Task Creation Response:", creationResponse);
 
-      // Handle array response for creation as well, just in case
       const creationData = Array.isArray(creationResponse) ? creationResponse[0] : creationResponse;
 
       const taskId = 
@@ -229,7 +237,6 @@ const App: React.FC = () => {
         throw new Error(`No Task ID returned.`);
       }
 
-      console.log(`Task ID received: ${taskId}`);
       const startTime = Date.now();
 
       // Save to History
@@ -246,6 +253,7 @@ const App: React.FC = () => {
       saveHistoryItem(newHistoryItem);
       updateHistoryState();
 
+      // Setting state to PROCESSING triggers the useEffect above to start polling automatically
       setResult(prev => ({ 
         ...prev, 
         status: TaskStatus.PROCESSING, 
@@ -253,16 +261,6 @@ const App: React.FC = () => {
         taskId: taskId,
         startTime: startTime
       }));
-
-      // 2. Start Polling
-      if (pollingRef.current) clearInterval(pollingRef.current);
-      
-      // Initial check after 1.5 second
-      setTimeout(() => checkStatus(taskId, apiKey), 1500);
-
-      pollingRef.current = window.setInterval(() => {
-        checkStatus(taskId, apiKey);
-      }, 5000);
 
     } catch (e: any) {
       console.error("Generation Start Failed", e);
@@ -284,6 +282,8 @@ const App: React.FC = () => {
   };
 
   const handleHistorySelect = (item: HistoryItem) => {
+    // If we select an item that is still processing, the status update here
+    // will trigger the useEffect to start polling again automatically.
     setResult({
       imageUrl: item.resultUrl,
       status: item.status,
@@ -297,19 +297,6 @@ const App: React.FC = () => {
       ...prev,
       prompt: item.prompt,
     }));
-
-    if (item.status === TaskStatus.PROCESSING || item.status === TaskStatus.SUBMITTED) {
-       const apiKey = getStoredApiKey();
-       if (pollingRef.current) clearInterval(pollingRef.current);
-       // Immediate check
-       checkStatus(item.taskId, apiKey);
-       // Resume polling
-       pollingRef.current = window.setInterval(() => {
-          checkStatus(item.taskId, apiKey);
-        }, 5000);
-    } else {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    }
   };
 
   return (
